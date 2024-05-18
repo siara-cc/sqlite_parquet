@@ -12,6 +12,7 @@ import org.apache.parquet.hadoop.example.GroupWriteSupport;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
 import org.apache.parquet.column.ParquetProperties;
 import static org.apache.parquet.column.ParquetProperties.WriterVersion.PARQUET_2_0;
+import static org.apache.parquet.hadoop.metadata.CompressionCodecName.ZSTD;
 import static org.apache.parquet.hadoop.metadata.CompressionCodecName.GZIP;
 import static org.apache.parquet.hadoop.metadata.CompressionCodecName.SNAPPY;
 import static org.apache.parquet.hadoop.metadata.CompressionCodecName.UNCOMPRESSED;
@@ -30,8 +31,15 @@ public class SQLiteToParquet {
                 return "binary";
             case Types.FLOAT:
                 return "float";
+            case Types.DOUBLE:
+                return "double";
+            case Types.DECIMAL:
+                return "double";
+            case Types.REAL:
+                return "float";
+            default:
+                return "binary";
         }
-        return "";
     }
 
     static String getEncoding(int colType) {
@@ -99,7 +107,7 @@ public class SQLiteToParquet {
             ParquetWriter<Group> writer = new ParquetWriter<Group>(
                 outputPath,
                 new GroupWriteSupport(),
-                UNCOMPRESSED,
+                ZSTD,
                 256 * 1024 * 1024,
                 4 * 1024 * 1024,
                 512,
@@ -108,8 +116,12 @@ public class SQLiteToParquet {
                 PARQUET_2_0,
                 conf);
 
+int row_num = 0;
+try {
+
             // Iterate over the result set and write data to Parquet file
             while (resultSet.next()) {
+                String s;
                 Group group = new SimpleGroup(schema);
                 for (int i = 1; i <= columnCount; i++) {
                     switch (metaData.getColumnType(i)) {
@@ -117,7 +129,7 @@ public class SQLiteToParquet {
                         group.add(metaData.getColumnName(i), resultSet.getInt(i));
                         break;
                       case Types.VARCHAR:
-                        String s = resultSet.getString(i);
+                        s = resultSet.getString(i);
                         if (s == null)
                             group.add(metaData.getColumnName(i), "");
                         else
@@ -126,10 +138,29 @@ public class SQLiteToParquet {
                       case Types.FLOAT:
                         group.add(metaData.getColumnName(i), resultSet.getFloat(i));
                         break;
+                      case Types.DECIMAL:
+                        double dbl = resultSet.getDouble(i);
+                        group.add(metaData.getColumnName(i), dbl);
+                        break;
+                      case Types.DOUBLE:
+                        group.add(metaData.getColumnName(i), resultSet.getDouble(i));
+                        break;
+                      case Types.REAL:
+                        group.add(metaData.getColumnName(i), resultSet.getFloat(i));
+                        break;
+                      default:
+                        s = resultSet.getString(i);
+                        group.add(metaData.getColumnName(i), s == null ? "" : s);
                     }
                 }
                 writer.write(group);
+                row_num++;
             }
+
+} catch (Exception e) {
+  e.printStackTrace();
+  System.out.println("Record number: " + row_num);
+}
 
             // Close the Parquet writer
             writer.close();
